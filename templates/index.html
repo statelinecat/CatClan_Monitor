@@ -5,31 +5,101 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Binance Futures Overview</title>
     <style>
-        body { font-family: Arial, sans-serif; background-color: #1e2026; color: #eaecef; margin: 0; padding: 20px; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        h1 { text-align: center; color: #f0b90b; }
-        .section { margin: 20px 0; padding: 20px; background-color: #2a2d37; border-radius: 8px; }
-        .balance, .pnl, .futures-balances, .positions { margin-bottom: 20px; }
-        .balance h2, .pnl h2, .futures-balances h2, .positions h2 { color: #f0b90b; }
-        .balance-item, .position-item { padding: 10px; border-bottom: 1px solid #444; }
-        .position-item:last-child { border-bottom: none; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0b0e11;
+            color: #eaecef;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #f0b90b;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            background-color: #1e2329;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .section:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+        }
+
+        .section h2 {
+            color: #f0b90b;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #2c3137;
+            padding-bottom: 5px;
+        }
+
+        .balance-item, .position-item {
+            padding: 12px;
+            border-bottom: 1px solid #2c3137;
+        }
+
+        .position-item:last-child,
+        .balance-item:last-child {
+            border-bottom: none;
+        }
+
+        .position-item h3 {
+            margin: 0 0 8px;
+            color: #50fa7b;
+        }
+
+        .pnl-positive {
+            color: #16c784;
+            font-weight: bold;
+        }
+
+        .pnl-negative {
+            color: #ea3943;
+            font-weight: bold;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+
+        p {
+            margin: 4px 0;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Binance Futures Overview</h1>
+        <h1>📊 Binance Futures Overview</h1>
 
         <div class="section balance">
             <h2>Total Futures Balance</h2>
-            <p>{{ "%.2f"|format(futures_total) }} USDT</p>
+            <p><strong>{{ "%.2f"|format(futures_total) }} USDT</strong></p>
             <p>Last update: {{ last_update }}</p>
         </div>
 
         <div class="section pnl">
             <h2>Total PnL</h2>
-            <div>
-                <p>Unrealized PnL: {{ "%.2f"|format(total_unrealized_pnl) }} USDT ({{ "%.2f"|format(pnl_percentage) }}%)</p>
-            </div>
+            <p>
+                Unrealized PnL:
+                <span class="{% if total_unrealized_pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                    {{ "%.2f"|format(total_unrealized_pnl) }} USDT ({{ "%.2f"|format(pnl_percentage) }}%)
+                </span>
+            </p>
         </div>
 
         <div class="section futures-balances">
@@ -38,12 +108,12 @@
             <div class="balance-item">
                 <p>{{ balance.asset }}: {{ "%.6f"|format(balance.balance) }}
                     {% if balance.available is defined %}
-                    (Available: {{ "%.6f"|format(balance.available) }})
+                        (Available: {{ "%.6f"|format(balance.available) }})
                     {% endif %}
                 </p>
             </div>
             {% endfor %}
-            <p>Total Futures Balance: {{ "%.6f"|format(futures_total) }} USDT</p>
+            <p><strong>Total Futures Balance: {{ "%.6f"|format(futures_total) }} USDT</strong></p>
         </div>
 
         <div class="section positions">
@@ -52,13 +122,22 @@
             <div class="position-item">
                 <h3>{{ pos.symbol }} ({{ pos.positionSide }})</h3>
                 <p>Size: {{ "%.2f"|format(pos.usdtValue) }} USDT | Leverage: {{ pos.leverage }}x</p>
-                <p>Contracts: {{ pos.positionAmt|abs }} </p>
+                <p>Contracts: {{ pos.positionAmt|abs }}</p>
                 <p>Entry: {{ "%.4f"|format(pos.entryPrice) }} | Mark: {{ "%.4f"|format(pos.markPrice) }}</p>
-                <p>PNL: {{ "%.2f"|format(pos.unRealizedProfit) }} ({{ "%.2f"|format(pos.roe) }}%)</p>
+                <p>
+                    PNL:
+                    <span class="{% if pos.unRealizedProfit >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                        {{ "%.2f"|format(pos.unRealizedProfit) }} ({{ "%.2f"|format(pos.roe) }}%)
+                    </span>
+                </p>
             </div>
             {% else %}
             <p>No open positions</p>
             {% endfor %}
+        </div>
+
+        <div class="footer">
+            Binance Futures Dashboard • Powered by Your App 🚀
         </div>
     </div>
 </body>

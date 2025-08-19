@@ -1,8 +1,9 @@
 import os
 import logging
-from flask import Flask, render_template, jsonify
-from dash import Dash, dcc, html, callback_context
-from dash.dependencies import Input, Output, State
+import requests
+from flask import Flask, jsonify
+from dash import Dash, dcc, html, callback_context, Input, Output, State
+from dash import dash_table
 import plotly.graph_objs as go
 import pandas as pd
 from datetime import datetime, timedelta
@@ -25,7 +26,7 @@ server.secret_key = Config.SECRET_KEY
 binance_api = BinanceAPI()
 balance_storage = BalanceStorage()
 
-# Инициализация Dash приложения
+# Инициализация Dash
 app = Dash(
     __name__,
     server=server,
@@ -36,73 +37,163 @@ app = Dash(
     ]
 )
 
-# Макет Dash приложения
-app.layout = html.Div([
-    html.Div([
-        html.H1("Binance Futures Dashboard", style={
-            'textAlign': 'center',
-            'fontFamily': 'Roboto',
-            'color': '#f0b90b',
-            'marginBottom': '30px'
-        }),
-
-        dcc.Graph(id='balance-graph'),
-
-        html.Div([
-            html.Button('30 дней', id='btn-30', n_clicks=0, style={
-                'backgroundColor': '#f0b90b',
-                'color': '#1e2026',
-                'border': 'none',
-                'padding': '10px 20px',
-                'margin': '0 10px',
-                'borderRadius': '5px',
-                'cursor': 'pointer'
-            }),
-            html.Button('90 дней', id='btn-90', n_clicks=0, style={
-                'backgroundColor': '#f0b90b',
-                'color': '#1e2026',
-                'border': 'none',
-                'padding': '10px 20px',
-                'margin': '0 10px',
-                'borderRadius': '5px',
-                'cursor': 'pointer'
-            }),
-            html.Button('Весь период', id='btn-all', n_clicks=0, style={
-                'backgroundColor': '#f0b90b',
-                'color': '#1e2026',
-                'border': 'none',
-                'padding': '10px 20px',
-                'margin': '0 10px',
-                'borderRadius': '5px',
-                'cursor': 'pointer'
-            })
-        ], style={
-            'textAlign': 'center',
-            'margin': '20px 0'
-        }),
-
-        dcc.Interval(
-            id='interval-component',
-            interval=5 * 60 * 1000,
-            n_intervals=0
-        ),
-
-        # Контейнер для содержимого Flask
-        html.Iframe(id='flask-content', src='/flask-content', style={
-            'width': '100%',
-            'height': '1200px',
-            'border': 'none'
-        })
-    ], style={
+# =============
+# Стили
+# =============
+styles = {
+    'container': {
         'padding': '40px',
         'maxWidth': '1200px',
         'margin': '0 auto',
-        'fontFamily': 'Roboto',
+        'fontFamily': 'Roboto, sans-serif',
         'backgroundColor': '#1e2026',
         'color': '#eaecef'
-    })
+    },
+    'header': {
+        'textAlign': 'center',
+        'fontFamily': 'Roboto',
+        'color': '#f0b90b',
+        'marginBottom': '30px'
+    },
+    'button': {
+        'backgroundColor': '#f0b90b',
+        'color': '#1e2026',
+        'border': 'none',
+        'padding': '10px 20px',
+        'margin': '0 10px',
+        'borderRadius': '5px',
+        'cursor': 'pointer',
+        'fontWeight': '500'
+    },
+    'section': {
+        'margin': '30px 0',
+        'padding': '20px',
+        'backgroundColor': '#1e2329',
+        'borderRadius': '12px',
+        'boxShadow': '0 4px 12px rgba(0,0,0,0.4)'
+    },
+    'h2': {
+        'color': '#f0b90b',
+        'marginBottom': '15px',
+        'borderBottom': '1px solid #2c3137',
+        'paddingBottom': '8px'
+    }
+}
+
+# =============
+# Макет Dash
+# =============
+app.layout = html.Div([
+    html.Div([
+        html.H1("Binance Futures Dashboard", style=styles['header']),
+
+        # График баланса
+        dcc.Graph(id='balance-graph'),
+
+        # Кнопки периода
+        html.Div([
+            html.Button('30 дней', id='btn-30', n_clicks=0, style=styles['button']),
+            html.Button('90 дней', id='btn-90', n_clicks=0, style=styles['button']),
+            html.Button('Весь период', id='btn-all', n_clicks=0, style=styles['button'])
+        ], style={'textAlign': 'center', 'margin': '20px 0'}),
+
+        # Интервал обновления
+        dcc.Interval(id='interval-component', interval=5 * 60 * 1000, n_intervals=0),
+
+        # Блок: Общий баланс
+        html.Div([
+            html.H2("Total Futures Balance", style=styles['h2']),
+            html.P(id='futures-total', style={'fontSize': '24px', 'fontWeight': 'bold'}),
+            html.P(id='last-update')
+        ], style=styles['section']),
+
+        # Блок: PnL
+        html.Div([
+            html.H2("Total PnL", style=styles['h2']),
+            html.P(id='total-pnl')
+        ], style=styles['section']),
+
+        # Таблица позиций
+        html.Div([
+            html.H2("Open Positions", style=styles['h2']),
+            dash_table.DataTable(
+                id='positions-table',
+                columns=[
+                    {"name": "Symbol", "id": "symbol"},
+                    {"name": "Side", "id": "positionSide"},
+                    {"name": "Size (USDT)", "id": "size_usdt", "type": "numeric"},
+                    {"name": "Leverage", "id": "leverage_x"},
+                    {"name": "Contracts", "id": "contracts_abs", "type": "numeric"},
+                    {"name": "Entry", "id": "entryPrice", "type": "numeric"},
+                    {"name": "Mark", "id": "markPrice", "type": "numeric"},
+                    {"name": "PNL", "id": "unRealizedProfit", "type": "numeric"},
+                    {"name": "ROE (%)", "id": "roe", "type": "numeric"}
+                ],
+                sort_action="native",
+                sort_mode="single",
+                style_header={
+                    'backgroundColor': '#1e2329',
+                    'color': '#aaa',
+                    'fontWeight': 'normal',
+                    'borderBottom': '1px solid #2c3137',
+                    'padding': '10px',
+                    'fontSize': '13px'
+                },
+                style_cell={
+                    'backgroundColor': '#161a1f',
+                    'color': '#eaecef',
+                    'textAlign': 'left',
+                    'padding': '10px',
+                    'borderBottom': '1px solid #2c3137',
+                    'whiteSpace': 'no-wrap',
+                    'lineHeight': '1.4'
+                },
+                style_data_conditional=[
+                    # Чередование цветов строк
+                    {
+                        'if': {'row_index': 'even'},
+                        'backgroundColor': '#161a1f'
+                    },
+                    {
+                        'if': {'row_index': 'odd'},
+                        'backgroundColor': '#1e2329'
+                    },
+                    # Цвет PNL
+                    {
+                        'if': {'filter_query': '{unRealizedProfit} > 0', 'column_id': 'unRealizedProfit'},
+                        'color': '#16c784',
+                        'fontWeight': 'bold'
+                    },
+                    {
+                        'if': {'filter_query': '{unRealizedProfit} < 0', 'column_id': 'unRealizedProfit'},
+                        'color': '#ea3943',
+                        'fontWeight': 'bold'
+                    },
+                    # Цвет ROE
+                    {
+                        'if': {'filter_query': '{roe} > 0', 'column_id': 'roe'},
+                        'color': '#16c784',
+                        'fontWeight': 'bold'
+                    },
+                    {
+                        'if': {'filter_query': '{roe} < 0', 'column_id': 'roe'},
+                        'color': '#ea3943',
+                        'fontWeight': 'bold'
+                    }
+                ],
+                style_table={
+                    'overflowX': 'auto',
+                    'overflowY': 'auto',
+                    'maxHeight': '800px'  # Можно убрать, если хочешь бесконечную высоту
+                }
+            )
+        ], style=styles['section'])
+    ], style=styles['container'])
 ])
 
+# =============
+# Callback: Обновление графика
+# =============
 @app.callback(
     Output('balance-graph', 'figure'),
     [Input('btn-30', 'n_clicks'),
@@ -114,43 +205,59 @@ def update_graph(btn30, btn90, btn_all, n_intervals):
     ctx = callback_context
     button_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else 'btn-30'
 
-    period_map = {
-        'btn-30': 30,
-        'btn-90': 90,
-        'btn-all': None
-    }
+    period_map = {'btn-30': 30, 'btn-90': 90, 'btn-all': None}
     period_days = period_map.get(button_id, 30)
 
     try:
         df = balance_storage.get_balance_history(period_days or 9999)
-        logger.info(f"Balance history data before filtering: {df}")
-
-        # Преобразование столбца 'date' в datetime
-        if not df.empty:
-            df['date'] = pd.to_datetime(df['date'])
-            logger.info(f"Balance history data after converting to datetime: {df}")
-
-            # Фильтрация данных: только записи с 01.08.2025
-            start_date = datetime(2025, 8, 1)
-            df = df[df['date'] >= start_date]
-            logger.info(f"Balance history data after filtering (from 01.08.2025): {df}")
-
-        futures_data = get_futures_data()
+        logger.info(f"Balance history before processing: {df}")
 
         if df.empty:
-            df = pd.DataFrame({
-                'date': [max(datetime.now() - timedelta(days=1), start_date), datetime.now()],
-                'futures_balance': [0, futures_data['futures_total']]
+            fig = go.Figure()
+            fig.update_layout(
+                title="Нет данных",
+                template="plotly_dark",
+                font=dict(color="#eaecef")
+            )
+            return fig
+
+        # Преобразуем 'date' в datetime
+        df['date'] = pd.to_datetime(df['date'])
+
+        # Фильтруем по дате (начиная с 01.08.2025)
+        start_date = datetime(2025, 8, 1)
+        df = df[df['date'] >= start_date]
+
+        # Убедимся, что отсортировано по времени
+        df = df.sort_values('date')
+
+        # Группируем по дате (без времени) и берём последнюю запись за день
+        df['date_only'] = df['date'].dt.date
+        df_daily = df.groupby('date_only').last().reset_index()
+
+        # Восстанавливаем полноценную дату (для графика)
+        df_daily['date'] = pd.to_datetime(df_daily['date_only'])
+
+        # Сортируем по дате
+        df_daily = df_daily.sort_values('date')
+
+        # Если всё ещё пусто
+        if df_daily.empty:
+            df_daily = pd.DataFrame({
+                'date': [datetime.now()],
+                'futures_balance': [0]
             })
 
+        # Строим график
         fig = go.Figure(
             data=[
                 go.Scatter(
-                    x=df['date'],
-                    y=df['futures_balance'],
+                    x=df_daily['date'],
+                    y=df_daily['futures_balance'],
                     mode='lines+markers',
                     name='Futures Balance',
                     line=dict(color='#f6465d', width=3),
+                    marker=dict(size=6),
                     hovertemplate='%{y:.2f} USDT<extra></extra>'
                 )
             ],
@@ -162,66 +269,124 @@ def update_graph(btn30, btn90, btn_all, n_intervals):
                 hovermode='x unified',
                 plot_bgcolor='#1e2026',
                 paper_bgcolor='#1e2026',
-                font=dict(color='#eaecef')
+                font=dict(color='#eaecef'),
+                xaxis=dict(
+                    tickformat='%d.%m',
+                    tickmode='auto',
+                    nticks=10
+                )
             )
         )
 
         return fig
+
     except Exception as e:
         logger.error(f"Error updating graph: {e}")
-        return go.Figure()
+        fig = go.Figure()
+        fig.update_layout(
+            title="Ошибка загрузки данных",
+            template="plotly_dark",
+            font=dict(color="#eaecef")
+        )
+        return fig
 
+# =============
+# API: Получение данных фьючерсов
+# =============
+@server.route('/get_futures_data')
 def get_futures_data():
     try:
+        # Получение балансов
         futures_balances = binance_api.get_futures_balance()
-        futures_total = sum(float(b['balance']) for b in futures_balances if isinstance(b, dict) and 'balance' in b) if futures_balances else 0
-        return {'futures_total': futures_total}
+        futures_total = sum(
+            float(b['balance']) for b in futures_balances
+            if isinstance(b, dict) and 'balance' in b
+        ) if futures_balances else 0.0
+
+        # Получение позиций
+        raw_positions = binance_api.get_futures_positions()
+        positions = raw_positions.get('positions', []) if isinstance(raw_positions, dict) else raw_positions or []
+
+        # Преобразуем в DataFrame
+        df_positions = pd.DataFrame(positions)
+        if not df_positions.empty:
+            df_positions['size_usdt'] = df_positions['usdtValue'].round(2)
+            df_positions['leverage_x'] = df_positions['leverage'].astype(str) + 'x'
+            df_positions['contracts_abs'] = df_positions['positionAmt'].abs()
+            df_positions['entryPrice'] = df_positions['entryPrice'].round(6)
+            df_positions['markPrice'] = df_positions['markPrice'].round(6)
+            df_positions['unRealizedProfit'] = df_positions['unRealizedProfit'].round(2)
+            df_positions['roe'] = df_positions['roe'].round(2)
+
+            # Оставляем нужные колонки
+            df_positions = df_positions[[
+                'symbol', 'positionSide', 'size_usdt', 'leverage_x', 'contracts_abs',
+                'entryPrice', 'markPrice', 'unRealizedProfit', 'roe'
+            ]]
+        else:
+            df_positions = pd.DataFrame(columns=[
+                'symbol', 'positionSide', 'size_usdt', 'leverage_x', 'contracts_abs',
+                'entryPrice', 'markPrice', 'unRealizedProfit', 'roe'
+            ])
+
+        # Сохраняем баланс
+        balance_storage.save_balance(0, futures_total)
+
+        return jsonify({
+            'futures_total': round(futures_total, 2),
+            'positions': df_positions.to_dict('records'),
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
     except Exception as e:
         logger.error(f"Error getting futures data: {e}")
-        return {'futures_total': 0}
+        return jsonify({'error': str(e)}), 500
 
-@server.route('/flask-content')
-def flask_content():
+# =============
+# Callback: Обновление таблицы и баланса
+# =============
+@app.callback(
+    [Output('futures-total', 'children'),
+     Output('last-update', 'children'),
+     Output('total-pnl', 'children'),
+     Output('positions-table', 'data')],
+    [Input('interval-component', 'n_intervals')]
+)
+def update_positions_table(n_intervals):
     try:
-        # Получение и логирование балансов спот
-        spot_balances = binance_api.get_current_balance()
-        logger.info(f"Spot balances: {spot_balances}")
-        spot_balances = spot_balances.get('assets', []) if isinstance(spot_balances, dict) else spot_balances or []
-        spot_total = sum(float(b['total']) for b in spot_balances if isinstance(b, dict) and 'total' in b) if spot_balances else 0
+        resp = requests.get('http://localhost:5000/get_futures_data')
+        data = resp.json()
 
-        # Получение и логирование балансов фьючерсов
-        futures_balances = binance_api.get_futures_balance()
-        logger.info(f"Futures balances: {futures_balances}")
-        futures_balances = futures_balances.get('assets', []) if isinstance(futures_balances, dict) else futures_balances or []
-        futures_total = sum(float(b['balance']) for b in futures_balances if isinstance(b, dict) and 'balance' in b) if futures_balances else 0
+        if 'error' in data:
+            return "–", "", "Ошибка загрузки данных", []
 
-        # Сохранение балансов
-        balance_storage.save_balance(spot_total, futures_total)
+        futures_total = data['futures_total']
+        positions = data['positions']
+        timestamp = data['timestamp']
 
-        # Получение и логирование позиций фьючерсов
-        futures_positions = binance_api.get_futures_positions()
-        logger.info(f"Futures positions: {futures_positions}")
-        logger.info(f"Number of futures positions: {len(futures_positions)}")
-        logger.info(f"Sample position: {futures_positions[0] if futures_positions else 'No positions'}")
-        futures_positions = futures_positions.get('positions', []) if isinstance(futures_positions, dict) else futures_positions or []
-        total_unrealized_pnl = sum(float(pos['unRealizedProfit']) for pos in futures_positions if isinstance(pos, dict) and 'unRealizedProfit' in pos) if futures_positions else 0
+        # Расчёт общего PnL
+        total_pnl = sum(float(p['unRealizedProfit']) for p in positions) if positions else 0.0
+        pnl_percentage = (total_pnl / futures_total * 100) if futures_total > 0 else 0
 
-        # Расчет процента PNL
-        pnl_percentage = (total_unrealized_pnl / futures_total * 100) if futures_total > 0 else 0
+        pnl_text = html.Span(
+            f"{total_pnl:+.2f} USDT ({pnl_percentage:+.2f}%)",
+            style={'color': '#16c784' if total_pnl >= 0 else '#ea3943', 'fontWeight': 'bold'}
+        )
 
-        return render_template(
-            'flask_content.html',
-            futures_balances=futures_balances,
-            futures_total=futures_total,
-            futures_positions=futures_positions,
-            total_unrealized_pnl=total_unrealized_pnl,
-            pnl_percentage=pnl_percentage,
-            last_update=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return (
+            f"{futures_total:.2f} USDT",
+            f"Last update: {timestamp}",
+            html.P([
+                "Unrealized PnL: ", pnl_text
+            ]),
+            positions
         )
     except Exception as e:
-        logger.error(f"Ошибка в маршруте flask-content: {e}")
-        return render_template('error.html', error=str(e)), 500
+        logger.error(f"Error updating positions table: {e}")
+        return "–", "", "Ошибка", []
 
+# =============
+# Запуск приложения
+# =============
 if __name__ == '__main__':
     try:
         server.run(host='0.0.0.0', port=5000, debug=True)

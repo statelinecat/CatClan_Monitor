@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Futures Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background-color: #0b0e11;
+            color: #eaecef;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1, h2 {
+            color: #f0b90b;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            background-color: #1e2329;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        .section h2 {
+            margin-bottom: 15px;
+            border-bottom: 1px solid #2c3137;
+            padding-bottom: 8px;
+        }
+
+        /* Таблицы */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            cursor: default;
+        }
+
+        th {
+            color: #aaa;
+            font-weight: normal;
+            border-bottom: 1px solid #2c3137;
+            cursor: pointer;
+        }
+
+        tr:nth-child(even) {
+            background-color: #161a1f;
+        }
+
+        tr:hover {
+            background-color: #2c3137;
+        }
+
+        .pnl-positive {
+            color: #16c784;
+            font-weight: bold;
+        }
+
+        .pnl-negative {
+            color: #ea3943;
+            font-weight: bold;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 0.9em;
+            color: #999;
+        }
+
+        .total-row {
+            border-top: 2px solid #f0b90b;
+            font-weight: bold;
+            background-color: #0f1116;
+        }
+
+        th.sortable:after {
+            content: " ⇅";
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        th.asc:after {
+            content: " ↑";
+            font-size: 0.8em;
+            color: #f0b90b;
+        }
+
+        th.desc:after {
+            content: " ↓";
+            font-size: 0.8em;
+            color: #f0b90b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Binance Futures Overview</h1>
+
+        <!-- Баланс -->
+        <div class="section balance">
+            <h2>Total Futures Balance</h2>
+            <p><strong>{{ "%.2f"|format(futures_total) }} USDT</strong></p>
+            <p>Last update: {{ last_update }}</p>
+        </div>
+
+        <!-- PnL -->
+        <div class="section pnl">
+            <h2>Total PnL</h2>
+            <p>
+                Unrealized PnL:
+                <span class="{% if total_unrealized_pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                    {{ "%.2f"|format(total_unrealized_pnl) }} USDT ({{ "%.2f"|format(pnl_percentage) }}%)
+                </span>
+            </p>
+        </div>
+
+        <!-- Таблица балансов -->
+        <div class="section futures-balances">
+            <h2>Futures Balances</h2>
+            <table class="sortable-table">
+                <thead>
+                    <tr>
+                        <th class="sortable">Asset</th>
+                        <th class="sortable">Total</th>
+                        <th class="sortable">Available</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for balance in futures_balances %}
+                    <tr>
+                        <td>{{ balance.asset }}</td>
+                        <td>{{ "%.6f"|format(balance.balance) }}</td>
+                        <td>
+                            {% if balance.available is defined %}
+                                {{ "%.6f"|format(balance.available) }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p><strong>Total Futures Balance: {{ "%.6f"|format(futures_total) }} USDT</strong></p>
+        </div>
+
+        <!-- Таблица позиций -->
+        <div class="section positions">
+            <h2>Open Positions</h2>
+            {% if futures_positions %}
+            {% set total_size = 0 %}
+            {% set total_pnl = 0 %}
+            {% set total_roe = 0 %}
+            {% set count_positions = 0 %}
+            <table class="sortable-table">
+                <thead>
+                    <tr>
+                        <th class="sortable">Symbol</th>
+                        <th class="sortable">Side</th>
+                        <th class="sortable">Size (USDT)</th>
+                        <th class="sortable">Leverage</th>
+                        <th class="sortable">Contracts</th>
+                        <th class="sortable">Entry</th>
+                        <th class="sortable">Mark</th>
+                        <th class="sortable">PNL</th>
+                        <th class="sortable">ROE (%)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pos in futures_positions %}
+                    {% set total_size = total_size + pos.usdtValue %}
+                    {% set total_pnl = total_pnl + pos.unRealizedProfit %}
+                    {% set total_roe = total_roe + pos.roe %}
+                    {% set count_positions = count_positions + 1 %}
+                    <tr>
+                        <td>{{ pos.symbol }}</td>
+                        <td>{{ pos.positionSide }}</td>
+                        <td>{{ "%.2f"|format(pos.usdtValue) }}</td>
+                        <td>{{ pos.leverage }}x</td>
+                        <td>{{ pos.positionAmt|abs }}</td>
+                        <td>{{ "%.4f"|format(pos.entryPrice) }}</td>
+                        <td>{{ "%.4f"|format(pos.markPrice) }}</td>
+                        <td class="{% if pos.unRealizedProfit >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                            {{ "%.2f"|format(pos.unRealizedProfit) }}
+                        </td>
+                        <td class="{% if pos.roe >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                            {{ "%.2f"|format(pos.roe) }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    <!-- Итоговая строка -->
+                    {% set avg_roe = (total_roe / count_positions) if count_positions > 0 else 0 %}
+                    <tr class="total-row">
+                        <td colspan="2">TOTAL</td>
+                        <td>{{ "%.2f"|format(total_size) }}</td>
+                        <td colspan="4"></td>
+                        <td class="{% if total_pnl >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                            {{ "%.2f"|format(total_pnl) }}
+                        </td>
+                        <td class="{% if avg_roe >= 0 %}pnl-positive{% else %}pnl-negative{% endif %}">
+                            {{ "%.2f"|format(avg_roe) }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            {% else %}
+            <p>No open positions</p>
+            {% endif %}
+        </div>
+
+        <div class="footer">
+            Binance Futures Dashboard • Powered by Flask 🚀
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        document.querySelectorAll(".sortable-table th.sortable").forEach((header, index) => {
+            header.addEventListener("click", () => {
+                const table = header.closest("table");
+                const tbody = table.querySelector("tbody");
+                const rows = Array.from(tbody.querySelectorAll("tr:not(.total-row)"));
+                if (rows.length === 0) return;
+
+                // Удаляем все классы сортировки
+                table.querySelectorAll("th").forEach(th => th.classList.remove("asc", "desc"));
+
+                // Определяем направление
+                const isAsc = !header.classList.contains("asc");
+                header.classList.add(isAsc ? "asc" : "desc");
+
+                // Столбцы, которые числовые (индексы)
+                const numericColumns = [2, 3, 4, 5, 6, 7, 8]; // Size, Leverage, Contracts, Entry, Mark, PNL, ROE
+
+                // Сортировка
+                rows.sort((a, b) => {
+                    const valA = a.cells[index].textContent.trim();
+                    const valB = b.cells[index].textContent.trim();
+
+                    if (numericColumns.includes(index)) {
+                        // Чистим текст от символов (x, %, пробелы)
+                        const clean = (str) => parseFloat(str.replace(/[^\d.-]/g, '')) || 0;
+                        const numA = clean(valA);
+                        const numB = clean(valB);
+                        return isAsc ? numA - numB : numB - numA;
+                    } else {
+                        return isAsc
+                            ? valA.localeCompare(valB)
+                            : valB.localeCompare(valA);
+                    }
+                });
+
+                // Переставляем строки
+                const totalRow = table.querySelector(".total-row");
+                rows.forEach(row => tbody.insertBefore(row, totalRow));
+            });
+        });
+    });
+</script>
+</body>
+</html>
