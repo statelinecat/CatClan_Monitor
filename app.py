@@ -300,7 +300,7 @@ def update_graph(btn30, btn90, btn_all, n_intervals):
                 )
             ],
             layout=go.Layout(
-                title=f"График изменения баланса - {f'{period_days} дней' if period_days else 'Весь период'}",
+                title=f"Total Futures Balance - {f'{period_days} days' if period_days else 'All time'}",
                 xaxis_title='Дата',
                 yaxis_title='Баланс (USDT)',
                 template='plotly_dark',
@@ -405,11 +405,11 @@ def update_positions_table(n_intervals):
 
         # Расчёт общего PnL
         total_pnl = sum(float(p['unRealizedProfit']) for p in positions) if positions else 0.0
-        pnl_percentage = (total_pnl / futures_total * 100) if futures_total > 0 else 0
+        pnl_percentage = (total_pnl /(20 * futures_total) * 100) if futures_total > 0 else 0
 
         # Total Size
         total_size = sum(float(p['size_usdt']) for p in positions) if positions else 0.0
-        size_percent = (total_size / futures_total * 100) if futures_total > 0 else 0
+        size_percent = (total_size /(20 * futures_total) * 100) if futures_total > 0 else 0
 
         # Цвет Total Size
         size_color = '#ea3943' if total_size > futures_total else '#16c784'
@@ -431,7 +431,7 @@ def update_positions_table(n_intervals):
                 style={'color': size_color, 'fontWeight': 'bold'}
             ),
             html.Span(
-                f"Использовано: {size_percent:.1f}% от баланса",
+                f"Used: {size_percent:.1f}% of the balance",
                 style={'color': size_color}
             ),
             positions,
