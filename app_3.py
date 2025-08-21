@@ -45,36 +45,25 @@ styles = {
         'padding': '40px',
         'maxWidth': '1200px',
         'margin': '0 auto',
-        'fontFamily': 'Arial, Helvetica, sans-serif',
+        'fontFamily': 'Roboto, sans-serif',
         'backgroundColor': '#1e2026',
         'color': '#eaecef'
     },
     'header': {
         'textAlign': 'center',
-        'fontFamily': 'Arial, Helvetica, sans-serif',
-        'color': '#f5f5dc',
-        'marginBottom': '30px',
-        'fontWeight': 'bold',
-        'fontSize': '28px'
+        'fontFamily': 'Roboto',
+        'color': '#f0b90b',
+        'marginBottom': '30px'
     },
     'button': {
-        'backgroundColor': '#f5f5dc',
-        'color': '#000000',
+        'backgroundColor': '#f0b90b',
+        'color': '#1e2026',
         'border': 'none',
         'padding': '10px 20px',
         'margin': '0 10px',
-        'borderRadius': '4px',
+        'borderRadius': '5px',
         'cursor': 'pointer',
-        'fontWeight': 'bold',
-        'fontFamily': 'Arial, Helvetica, sans-serif',
-        'fontSize': '18px',
-        'boxShadow': '0 2px 4px rgba(0,0,0,0.2)',
-        'textAlign': 'center',
-        'display': 'inline-flex',
-        'alignItems': 'center',
-        'justifyContent': 'center',
-        'minHeight': '36px',
-        'textTransform': 'none'
+        'fontWeight': '500'
     },
     'section': {
         'margin': '30px 0',
@@ -84,13 +73,10 @@ styles = {
         'boxShadow': '0 4px 12px rgba(0,0,0,0.4)'
     },
     'h2': {
-        'color': '#f5f5dc',
+        'color': '#f0b90b',
         'marginBottom': '15px',
         'borderBottom': '1px solid #2c3137',
-        'paddingBottom': '8px',
-        'fontFamily': 'Arial, Helvetica, sans-serif',
-        'fontWeight': 'bold',
-        'fontSize': '18px'
+        'paddingBottom': '8px'
     }
 }
 
@@ -99,16 +85,16 @@ styles = {
 # =============
 app.layout = html.Div([
     html.Div([
-        html.H1("📊 Binance Futures Dashboard", style=styles['header']),
+        html.H1("Binance Futures Dashboard", style=styles['header']),
 
         # График баланса
         dcc.Graph(id='balance-graph'),
 
         # Кнопки периода
         html.Div([
-            html.Button('30 days', id='btn-30', n_clicks=0, style=styles['button']),
-            html.Button('90 days', id='btn-90', n_clicks=0, style=styles['button']),
-            html.Button('All time', id='btn-all', n_clicks=0, style=styles['button'])
+            html.Button('30 дней', id='btn-30', n_clicks=0, style=styles['button']),
+            html.Button('90 дней', id='btn-90', n_clicks=0, style=styles['button']),
+            html.Button('Весь период', id='btn-all', n_clicks=0, style=styles['button'])
         ], style={'textAlign': 'center', 'margin': '20px 0'}),
 
         # Интервал обновления
@@ -116,40 +102,20 @@ app.layout = html.Div([
 
         # Блок: Общий баланс
         html.Div([
-            html.H2("💰 Total Futures Balance", style=styles['h2']),
+            html.H2("Total Futures Balance", style=styles['h2']),
             html.P(id='futures-total', style={'fontSize': '24px', 'fontWeight': 'bold'}),
             html.P(id='last-update')
         ], style=styles['section']),
 
         # Блок: PnL
         html.Div([
-            html.H2("📈 Total PnL", style=styles['h2']),
+            html.H2("Total PnL", style=styles['h2']),
             html.P(id='total-pnl')
         ], style=styles['section']),
 
-        # Блок: Total Size
+        # Таблица позиций
         html.Div([
-            html.H2("💰 Total Size (USDT)", style=styles['h2']),
-            html.P(id='total-size', style={'fontSize': '24px', 'fontWeight': 'bold'}),
-            html.P(id='total-size-percent', style={'fontSize': '14px', 'marginTop': '5px'})
-        ], style=styles['section']),
-
-        # Таблица позиций с анимированным заголовком
-        html.Div([
-            # Анимированный заголовок: "📊🟢 Open Positions: 23"
-            html.H2(
-                children=[
-                    "📊",
-                    html.Span("🟢", style={
-                        'display': 'inline-block',
-                        'marginLeft': '8px',
-                        'animation': 'float 2s ease-in-out infinite'
-                    }),
-                    html.Span(" Open Positions: ", style={'marginLeft': '6px'}),
-                    html.Span(id='positions-count', style={'fontWeight': 'bold'})
-                ],
-                style=styles['h2']
-            ),
+            html.H2("Open Positions", style=styles['h2']),
             dash_table.DataTable(
                 id='positions-table',
                 columns=[
@@ -171,8 +137,7 @@ app.layout = html.Div([
                     'fontWeight': 'normal',
                     'borderBottom': '1px solid #2c3137',
                     'padding': '10px',
-                    'fontSize': '13px',
-                    'fontFamily': 'Arial, Helvetica, sans-serif'
+                    'fontSize': '13px'
                 },
                 style_cell={
                     'backgroundColor': '#161a1f',
@@ -181,8 +146,7 @@ app.layout = html.Div([
                     'padding': '10px',
                     'borderBottom': '1px solid #2c3137',
                     'whiteSpace': 'no-wrap',
-                    'lineHeight': '1.4',
-                    'fontFamily': 'Arial, Helvetica, sans-serif'
+                    'lineHeight': '1.4'
                 },
                 style_data_conditional=[
                     # Чередование цветов строк
@@ -217,14 +181,11 @@ app.layout = html.Div([
                         'fontWeight': 'bold'
                     }
                 ],
-                # Убрано ограничение высоты → все позиции видны
                 style_table={
                     'overflowX': 'auto',
                     'overflowY': 'auto',
-                    'maxHeight': None,
-                    'height': 'auto'
-                },
-                page_action='none'
+                    'maxHeight': '800px'  # Можно убрать, если хочешь бесконечную высоту
+                }
             )
         ], style=styles['section'])
     ], style=styles['container'])
@@ -274,12 +235,13 @@ def update_graph(btn30, btn90, btn_all, n_intervals):
         df['date_only'] = df['date'].dt.date
         df_daily = df.groupby('date_only').last().reset_index()
 
-        # Восстанавливаем полноценную дату
+        # Восстанавливаем полноценную дату (для графика)
         df_daily['date'] = pd.to_datetime(df_daily['date_only'])
 
         # Сортируем по дате
         df_daily = df_daily.sort_values('date')
 
+        # Если всё ещё пусто
         if df_daily.empty:
             df_daily = pd.DataFrame({
                 'date': [datetime.now()],
@@ -356,6 +318,7 @@ def get_futures_data():
             df_positions['unRealizedProfit'] = df_positions['unRealizedProfit'].round(2)
             df_positions['roe'] = df_positions['roe'].round(2)
 
+            # Оставляем нужные колонки
             df_positions = df_positions[[
                 'symbol', 'positionSide', 'size_usdt', 'leverage_x', 'contracts_abs',
                 'entryPrice', 'markPrice', 'unRealizedProfit', 'roe'
@@ -375,20 +338,17 @@ def get_futures_data():
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
     except Exception as e:
-        logger.error(f"Error getting futures  {e}")
+        logger.error(f"Error getting futures data: {e}")
         return jsonify({'error': str(e)}), 500
 
 # =============
-# Callback: Обновление всех данных
+# Callback: Обновление таблицы и баланса
 # =============
 @app.callback(
     [Output('futures-total', 'children'),
      Output('last-update', 'children'),
      Output('total-pnl', 'children'),
-     Output('total-size', 'children'),
-     Output('total-size-percent', 'children'),
-     Output('positions-table', 'data'),
-     Output('positions-count', 'children')],
+     Output('positions-table', 'data')],
     [Input('interval-component', 'n_intervals')]
 )
 def update_positions_table(n_intervals):
@@ -397,7 +357,7 @@ def update_positions_table(n_intervals):
         data = resp.json()
 
         if 'error' in data:
-            return "–", "", "Ошибка загрузки данных", "–", "", [], "–"
+            return "–", "", "Ошибка загрузки данных", []
 
         futures_total = data['futures_total']
         positions = data['positions']
@@ -407,14 +367,6 @@ def update_positions_table(n_intervals):
         total_pnl = sum(float(p['unRealizedProfit']) for p in positions) if positions else 0.0
         pnl_percentage = (total_pnl / futures_total * 100) if futures_total > 0 else 0
 
-        # Total Size
-        total_size = sum(float(p['size_usdt']) for p in positions) if positions else 0.0
-        size_percent = (total_size / futures_total * 100) if futures_total > 0 else 0
-
-        # Цвет Total Size
-        size_color = '#ea3943' if total_size > futures_total else '#16c784'
-
-        # PNL текст
         pnl_text = html.Span(
             f"{total_pnl:+.2f} USDT ({pnl_percentage:+.2f}%)",
             style={'color': '#16c784' if total_pnl >= 0 else '#ea3943', 'fontWeight': 'bold'}
@@ -426,20 +378,11 @@ def update_positions_table(n_intervals):
             html.P([
                 "Unrealized PnL: ", pnl_text
             ]),
-            html.Span(
-                f"{total_size:.2f} USDT",
-                style={'color': size_color, 'fontWeight': 'bold'}
-            ),
-            html.Span(
-                f"Использовано: {size_percent:.1f}% от баланса",
-                style={'color': size_color}
-            ),
-            positions,
-            f"{len(positions)}"
+            positions
         )
     except Exception as e:
         logger.error(f"Error updating positions table: {e}")
-        return "–", "", "Ошибка", "–", "", [], "–"
+        return "–", "", "Ошибка", []
 
 # =============
 # Запуск приложения
