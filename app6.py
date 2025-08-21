@@ -98,11 +98,30 @@ styles = {
 # Макет Dash
 # =============
 app.layout = html.Div([
+    # Хранилище для сохранения выбора типа графика
+    dcc.Store(id='chart-type-store', data='lines'),
+
     html.Div([
         html.H1("📊 Binance Futures Dashboard", style=styles['header']),
 
-        # График баланса
-        dcc.Graph(id='balance-graph'),
+        # Выбор типа графика
+        html.Div([
+            html.Span("📈 Chart Type: ", style={'color': '#f5f5dc', 'marginRight': '8px'}),
+            dcc.Dropdown(
+                id='chart-type',
+                options=[
+                    {'label': 'Lines', 'value': 'lines'},
+                    {'label': 'Candlestick', 'value': 'candlestick'}
+                ],
+                value='lines',
+                style={
+                    'width': '140px',
+                    'fontSize': '14px',
+                    'color': '#000000'
+                },
+                clearable=False
+            )
+        ], style={'textAlign': 'center', 'margin': '10px 0'}),
 
         # Кнопки периода
         html.Div([
@@ -113,6 +132,9 @@ app.layout = html.Div([
 
         # Интервал обновления
         dcc.Interval(id='interval-component', interval=5 * 60 * 1000, n_intervals=0),
+
+        # График баланса
+        dcc.Graph(id='balance-graph'),
 
         # Блок: Общий баланс
         html.Div([
@@ -185,7 +207,6 @@ app.layout = html.Div([
                     'fontFamily': 'Arial, Helvetica, sans-serif'
                 },
                 style_data_conditional=[
-                    # Чередование цветов строк
                     {
                         'if': {'row_index': 'even'},
                         'backgroundColor': '#161a1f'
@@ -194,7 +215,6 @@ app.layout = html.Div([
                         'if': {'row_index': 'odd'},
                         'backgroundColor': '#1e2329'
                     },
-                    # Цвет PNL
                     {
                         'if': {'filter_query': '{unRealizedProfit} > 0', 'column_id': 'unRealizedProfit'},
                         'color': '#16c784',
@@ -205,7 +225,6 @@ app.layout = html.Div([
                         'color': '#ea3943',
                         'fontWeight': 'bold'
                     },
-                    # Цвет ROE
                     {
                         'if': {'filter_query': '{roe} > 0', 'column_id': 'roe'},
                         'color': '#16c784',
@@ -217,7 +236,6 @@ app.layout = html.Div([
                         'fontWeight': 'bold'
                     }
                 ],
-                # Убрано ограничение высоты → все позиции видны
                 style_table={
                     'overflowX': 'auto',
                     'overflowY': 'auto',
@@ -231,6 +249,16 @@ app.layout = html.Div([
 ])
 
 # =============
+# Callback: Сохранение выбора типа графика
+# =============
+@app.callback(
+    Output('chart-type-store', 'data'),
+    Input('chart-type', 'value')
+)
+def save_chart_type(chart_type):
+    return chart_type
+
+# =============
 # Callback: Обновление графика
 # =============
 @app.callback(
@@ -238,9 +266,10 @@ app.layout = html.Div([
     [Input('btn-30', 'n_clicks'),
      Input('btn-90', 'n_clicks'),
      Input('btn-all', 'n_clicks'),
-     Input('interval-component', 'n_intervals')]
+     Input('interval-component', 'n_intervals'),
+     Input('chart-type-store', 'data')]
 )
-def update_graph(btn30, btn90, btn_all, n_intervals):
+def update_graph(btn30, btn90, btn_all, n_intervals, chart_type):
     ctx = callback_context
     button_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else 'btn-30'
 
@@ -260,81 +289,101 @@ def update_graph(btn30, btn90, btn_all, n_intervals):
             )
             return fig
 
-        # Преобразуем 'date' в datetime
+        # Работаем с копией
+        df = df.copy()
         df['date'] = pd.to_datetime(df['date'])
 
-        # Фильтруем по дате (начиная с 01.08.2025)
+        # Фильтр по дате
         start_date = datetime(2025, 8, 1)
         df = df[df['date'] >= start_date]
 
-        # Убедимся, что отсортировано по времени
         df = df.sort_values('date')
 
-        # СОЗДАЁМ date_only ДО ФИЛЬТРАЦИИ
+        # Создаём date_only
         df['date_only'] = df['date'].dt.date
 
         # Убираем нулевые балансы
         df_filtered = df[df['futures_balance'] > 0]
-
         if df_filtered.empty:
-            # Если все значения нулевые — используем оригинальный df
             df_filtered = df.copy()
 
-        # Группируем по дате
-        df_daily = df_filtered.groupby('date_only').agg(
+        # Группируем
+        daily_stats = df_filtered.groupby('date_only').agg(
             min_balance=('futures_balance', 'min'),
             max_balance=('futures_balance', 'max'),
-            last_balance=('futures_balance', 'last')
+            open_balance=('futures_balance', 'first'),
+            close_balance=('futures_balance', 'last')
         ).reset_index()
 
-        # Восстанавливаем полноценную дату
-        df_daily['date'] = pd.to_datetime(df_daily['date_only'])
+        daily_stats['date'] = pd.to_datetime(daily_stats['date_only'])
+        daily_stats = daily_stats.sort_values('date')
 
-        # Сортируем по дате
-        df_daily = df_daily.sort_values('date')
-
-        if df_daily.empty:
-            df_daily = pd.DataFrame({
+        if daily_stats.empty:
+            daily_stats = pd.DataFrame({
                 'date_only': [datetime.now().date()],
                 'min_balance': [0],
                 'max_balance': [0],
-                'last_balance': [0],
+                'open_balance': [0],
+                'close_balance': [0],
                 'date': [datetime.now()]
             })
 
-        # Строим график
         fig = go.Figure()
 
-        # Минимум
-        fig.add_trace(go.Scatter(
-            x=df_daily['date'],
-            y=df_daily['min_balance'],
-            mode='lines',
-            name='Min Balance',
-            line=dict(color='#ea3943', width=1, dash='dot'),
-            hovertemplate='Min: %{y:.2f} USDT<extra></extra>'
-        ))
+        if chart_type == 'candlestick':
+            # Кастомный hover через text
+            hover_text = [
+                f"<b>Open</b>: {o:.2f}<br>"
+                f"<b>High</b>: {h:.2f}<br>"
+                f"<b>Low</b>: {l:.2f}<br>"
+                f"<b>Close</b>: {c:.2f}"
+                for o, h, l, c in zip(
+                    daily_stats['open_balance'],
+                    daily_stats['max_balance'],
+                    daily_stats['min_balance'],
+                    daily_stats['close_balance']
+                )
+            ]
 
-        # Максимум
-        fig.add_trace(go.Scatter(
-            x=df_daily['date'],
-            y=df_daily['max_balance'],
-            mode='lines',
-            name='Max Balance',
-            line=dict(color='#16c784', width=1, dash='dot'),
-            hovertemplate='Max: %{y:.2f} USDT<extra></extra>'
-        ))
-
-        # Закрывающий баланс
-        fig.add_trace(go.Scatter(
-            x=df_daily['date'],
-            y=df_daily['last_balance'],
-            mode='lines+markers',
-            name='Close Balance',
-            line=dict(color='#f6465d', width=3),
-            marker=dict(size=6),
-            hovertemplate='%{y:.2f} USDT<extra></extra>'
-        ))
+            fig.add_trace(go.Candlestick(
+                x=daily_stats['date'],
+                open=daily_stats['open_balance'],
+                high=daily_stats['max_balance'],
+                low=daily_stats['min_balance'],
+                close=daily_stats['close_balance'],
+                name='Balance',
+                increasing_line_color='#16c784',
+                decreasing_line_color='#ea3943',
+                text=hover_text,
+                hoverinfo='x+text',
+                hoverlabel=dict(bgcolor='black', font_color='white')
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=daily_stats['date'],
+                y=daily_stats['min_balance'],
+                mode='lines',
+                name='Min Balance',
+                line=dict(color='#ea3943', width=1, dash='dot'),
+                hovertemplate='Min: %{y:.2f} USDT<extra></extra>'
+            ))
+            fig.add_trace(go.Scatter(
+                x=daily_stats['date'],
+                y=daily_stats['max_balance'],
+                mode='lines',
+                name='Max Balance',
+                line=dict(color='#16c784', width=1, dash='dot'),
+                hovertemplate='Max: %{y:.2f} USDT<extra></extra>'
+            ))
+            fig.add_trace(go.Scatter(
+                x=daily_stats['date'],
+                y=daily_stats['close_balance'],
+                mode='lines+markers',
+                name='Close Balance',
+                line=dict(color='#f6465d', width=3),
+                marker=dict(size=6),
+                hovertemplate='%{y:.2f} USDT<extra></extra>'
+            ))
 
         fig.update_layout(
             title=f"Total Futures Balance - {f'{period_days} days' if period_days else 'All time'}",
@@ -360,24 +409,22 @@ def update_graph(btn30, btn90, btn_all, n_intervals):
             font=dict(color="#eaecef")
         )
         return fig
+
 # =============
 # API: Получение данных фьючерсов
 # =============
 @server.route('/get_futures_data')
 def get_futures_data():
     try:
-        # Получение балансов
         futures_balances = binance_api.get_futures_balance()
         futures_total = sum(
             float(b['balance']) for b in futures_balances
             if isinstance(b, dict) and 'balance' in b
         ) if futures_balances else 0.0
 
-        # Получение позиций
         raw_positions = binance_api.get_futures_positions()
         positions = raw_positions.get('positions', []) if isinstance(raw_positions, dict) else raw_positions or []
 
-        # Преобразуем в DataFrame
         df_positions = pd.DataFrame(positions)
         if not df_positions.empty:
             df_positions['size_usdt'] = df_positions['usdtValue'].round(2)
@@ -398,7 +445,6 @@ def get_futures_data():
                 'entryPrice', 'markPrice', 'unRealizedProfit', 'roe'
             ])
 
-        # Сохраняем баланс
         balance_storage.save_balance(0, futures_total)
 
         return jsonify({
@@ -407,7 +453,7 @@ def get_futures_data():
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
     except Exception as e:
-        logger.error(f"Error getting futures  {e}")
+        logger.error(f"Error getting futures data: {e}")
         return jsonify({'error': str(e)}), 500
 
 # =============
@@ -435,18 +481,14 @@ def update_positions_table(n_intervals):
         positions = data['positions']
         timestamp = data['timestamp']
 
-        # Расчёт общего PnL
         total_pnl = sum(float(p['unRealizedProfit']) for p in positions) if positions else 0.0
-        pnl_percentage = (total_pnl /futures_total * 100) if futures_total > 0 else 0
+        pnl_percentage = (total_pnl / futures_total * 100) if futures_total > 0 else 0
 
-        # Total Size
         total_size = sum(float(p['size_usdt']) for p in positions) if positions else 0.0
-        size_percent = (total_size /(20 * futures_total) * 100) if futures_total > 0 else 0
+        size_percent = (total_size / futures_total * 100) if futures_total > 0 else 0
 
-        # Цвет Total Size
-        size_color = '#ea3943' if total_size > (10 * futures_total) else '#16c784'
+        size_color = '#ea3943' if total_size > futures_total else '#16c784'
 
-        # PNL текст
         pnl_text = html.Span(
             f"{total_pnl:+.2f} USDT ({pnl_percentage:+.2f}%)",
             style={'color': '#16c784' if total_pnl >= 0 else '#ea3943', 'fontWeight': 'bold'}
