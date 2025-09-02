@@ -14,3 +14,25 @@
     border-radius: 8px;
     overflow: hidden;
 }
+
+/* assets/styles.css */
+.period-btn {
+    background-color: #2c3137;
+    border: none;
+    color: #aaa;
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.period-btn:hover {
+    background-color: #3c424b;
+}
+
+.period-btn.active {
+    background-color: #f5f5dc !important;
+    color: #000 !important;
+    font-weight: bold;
+    box-shadow: 0 0 0 2px rgba(245, 245, 220, 0.3);
+}
