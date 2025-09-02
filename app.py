@@ -1,21 +1,24 @@
 import os
 import logging
-import requests
-from flask import Flask, jsonify
+import traceback
+from flask import Flask, jsonify, request
 from dash import Dash, dcc, html, callback_context, Input, Output, State
-from dash import dash_table
+from dash import dash_table  # на случай, если понадобится
+import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
 import pandas as pd
 from datetime import datetime, timedelta
+
+# Ваши модули
 from utils.binance_api import BinanceAPI
 from utils.data_storage import BalanceStorage
 from config import Config
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Инициализация конфигурации
+# Проверка конфигурации
 Config.validate_config()
 
 # Инициализация Flask
@@ -26,209 +29,177 @@ server.secret_key = Config.SECRET_KEY
 binance_api = BinanceAPI()
 balance_storage = BalanceStorage()
 
-# Инициализация Dash
+# Инициализация Dash с Bootstrap (тёмная тема)
 app = Dash(
     __name__,
     server=server,
     url_base_pathname='/',
-    external_stylesheets=[
-        'https://codepen.io/chriddyp/pen/bWLwgP.css',
-        'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap'
-    ]
+    external_stylesheets=[dbc.themes.CYBORG],
+    suppress_callback_exceptions=True
 )
 
 # =============
-# Стили
+# Глобальные стили
 # =============
-styles = {
-    'container': {
-        'padding': '40px',
-        'maxWidth': '1200px',
-        'margin': '0 auto',
-        'fontFamily': 'Arial, Helvetica, sans-serif',
-        'backgroundColor': '#1e2026',
-        'color': '#eaecef'
-    },
-    'header': {
-        'textAlign': 'center',
-        'fontFamily': 'Arial, Helvetica, sans-serif',
-        'color': '#f5f5dc',
-        'marginBottom': '30px',
-        'fontWeight': 'bold',
-        'fontSize': '28px'
-    },
-    'button': {
-        'backgroundColor': '#f5f5dc',
-        'color': '#000000',
-        'border': 'none',
-        'padding': '10px 20px',
-        'margin': '0 10px',
-        'borderRadius': '4px',
-        'cursor': 'pointer',
-        'fontWeight': 'bold',
-        'fontFamily': 'Arial, Helvetica, sans-serif',
-        'fontSize': '18px',
-        'boxShadow': '0 2px 4px rgba(0,0,0,0.2)',
-        'textAlign': 'center',
-        'display': 'inline-flex',
-        'alignItems': 'center',
-        'justifyContent': 'center',
-        'minHeight': '36px',
-        'textTransform': 'none'
-    },
-    'section': {
-        'margin': '30px 0',
-        'padding': '20px',
-        'backgroundColor': '#1e2329',
-        'borderRadius': '12px',
-        'boxShadow': '0 4px 12px rgba(0,0,0,0.4)'
-    },
-    'h2': {
-        'color': '#f5f5dc',
-        'marginBottom': '15px',
-        'borderBottom': '1px solid #2c3137',
-        'paddingBottom': '8px',
-        'fontFamily': 'Arial, Helvetica, sans-serif',
-        'fontWeight': 'bold',
-        'fontSize': '18px'
-    }
+style_h2 = {
+    'color': '#f5f5dc',
+    'marginBottom': '8px',
+    'fontSize': '16px',
+    'fontWeight': 'bold'
+}
+
+style_value = {
+    'fontSize': '20px',
+    'fontWeight': 'bold'
 }
 
 # =============
-# Макет Dash
+# Макет приложения
 # =============
 app.layout = html.Div([
-    html.Div([
-        html.H1("📊 Binance Futures Dashboard", style=styles['header']),
+    # Метатеги для мобильных
+    dcc.Location(id='url'),
+    html.Meta(name='viewport', content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'),
+
+    # Основной контейнер
+    dbc.Container([
+        # Заголовок
+        dbc.Row([
+            dbc.Col(
+                html.H1("📊 Binance Futures", className="text-center my-3", style={
+                    'color': '#f5f5dc',
+                    'fontSize': '24px',
+                    'fontWeight': 'bold'
+                }),
+                width=12
+            )
+        ]),
 
         # График баланса
-        dcc.Graph(id='balance-graph'),
+        dbc.Row([
+            dbc.Col([
+                dcc.Graph(id='balance-graph', style={'height': '300px'}),
+                # Кнопки периода
+                html.Div([
+                    dbc.Button("30d", id='btn-30', color="secondary", size="sm", className="mx-1"),
+                    dbc.Button("90d", id='btn-90', color="secondary", size="sm", className="mx-1"),
+                    dbc.Button("All", id='btn-all', color="secondary", size="sm", className="mx-1"),
+                ], className="text-center my-2")
+            ])
+        ], className="mb-3"),
 
-        # Кнопки периода
-        html.Div([
-            html.Button('30 days', id='btn-30', n_clicks=0, style=styles['button']),
-            html.Button('90 days', id='btn-90', n_clicks=0, style=styles['button']),
-            html.Button('All time', id='btn-all', n_clicks=0, style=styles['button'])
-        ], style={'textAlign': 'center', 'margin': '20px 0'}),
-
-        # Интервал обновления
+        # Интервал автообновления
         dcc.Interval(id='interval-component', interval=5 * 60 * 1000, n_intervals=0),
 
-        # Блок: Общий баланс
-        html.Div([
-            html.H2("💰 Total Futures Balance", style=styles['h2']),
-            html.P(id='futures-total', style={'fontSize': '24px', 'fontWeight': 'bold'}),
-            html.P(id='last-update')
-        ], style=styles['section']),
+        # Блок статистики: Total, PnL, Size
+        dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H6("Total Balance", className="card-subtitle mb-1", style=style_h2),
+                        html.P(id='futures-total', style={**style_value, 'color': '#f5f5dc'}),
+                        html.Small(id='last-update', className="text-muted")
+                    ])
+                ], color="dark", outline=True, style={'height': '100%'})
+            ], width=12, sm=6, md=4, className="mb-2"),
 
-        # Блок: PnL
-        html.Div([
-            html.H2("📈 Total PnL", style=styles['h2']),
-            html.P(id='total-pnl')
-        ], style=styles['section']),
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H6("Unrealized PnL", className="card-subtitle mb-1", style=style_h2),
+                        html.P(id='total-pnl', style={'fontSize': '14px'})
+                    ])
+                ], color="dark", outline=True, style={'height': '100%'})
+            ], width=12, sm=6, md=4, className="mb-2"),
 
-        # Блок: Total Size
-        html.Div([
-            html.H2("💰 Total Size (USDT)", style=styles['h2']),
-            html.P(id='total-size', style={'fontSize': '24px', 'fontWeight': 'bold'}),
-            html.P(id='total-size-percent', style={'fontSize': '14px', 'marginTop': '5px'})
-        ], style=styles['section']),
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H6("Total Size", className="card-subtitle mb-1", style=style_h2),
+                        html.P(id='total-size', style={'fontSize': '16px', 'fontWeight': 'bold'}),
+                        html.Small(id='total-size-percent')
+                    ])
+                ], color="dark", outline=True, style={'height': '100%'})
+            ], width=12, sm=6, md=4, className="mb-2"),
+        ], className="mb-3"),
 
-        # Таблица позиций с анимированным заголовком
-        html.Div([
-            # Анимированный заголовок: "📊🟢 Open Positions: 23"
-            html.H2(
-                children=[
-                    "📊",
-                    html.Span("🟢", style={
-                        'display': 'inline-block',
-                        'marginLeft': '8px',
-                        'animation': 'float 2s ease-in-out infinite'
-                    }),
-                    html.Span(" Open Positions: ", style={'marginLeft': '6px'}),
-                    html.Span(id='positions-count', style={'fontWeight': 'bold'})
-                ],
-                style=styles['h2']
-            ),
-            dash_table.DataTable(
-                id='positions-table',
-                columns=[
-                    {"name": "Symbol", "id": "symbol"},
-                    {"name": "Side", "id": "positionSide"},
-                    {"name": "Size (USDT)", "id": "size_usdt", "type": "numeric"},
-                    {"name": "Leverage", "id": "leverage_x"},
-                    {"name": "Contracts", "id": "contracts_abs", "type": "numeric"},
-                    {"name": "Entry", "id": "entryPrice", "type": "numeric"},
-                    {"name": "Mark", "id": "markPrice", "type": "numeric"},
-                    {"name": "PNL", "id": "unRealizedProfit", "type": "numeric"},
-                    {"name": "ROE (%)", "id": "roe", "type": "numeric"}
-                ],
-                sort_action="native",
-                sort_mode="single",
-                style_header={
-                    'backgroundColor': '#1e2329',
-                    'color': '#aaa',
-                    'fontWeight': 'normal',
-                    'borderBottom': '1px solid #2c3137',
-                    'padding': '10px',
-                    'fontSize': '13px',
-                    'fontFamily': 'Arial, Helvetica, sans-serif'
-                },
-                style_cell={
-                    'backgroundColor': '#161a1f',
-                    'color': '#eaecef',
-                    'textAlign': 'left',
-                    'padding': '10px',
-                    'borderBottom': '1px solid #2c3137',
-                    'whiteSpace': 'no-wrap',
-                    'lineHeight': '1.4',
-                    'fontFamily': 'Arial, Helvetica, sans-serif'
-                },
-                style_data_conditional=[
-                    # Чередование цветов строк
-                    {
-                        'if': {'row_index': 'even'},
-                        'backgroundColor': '#161a1f'
-                    },
-                    {
-                        'if': {'row_index': 'odd'},
-                        'backgroundColor': '#1e2329'
-                    },
-                    # Цвет PNL
-                    {
-                        'if': {'filter_query': '{unRealizedProfit} > 0', 'column_id': 'unRealizedProfit'},
-                        'color': '#16c784',
-                        'fontWeight': 'bold'
-                    },
-                    {
-                        'if': {'filter_query': '{unRealizedProfit} < 0', 'column_id': 'unRealizedProfit'},
-                        'color': '#ea3943',
-                        'fontWeight': 'bold'
-                    },
-                    # Цвет ROE
-                    {
-                        'if': {'filter_query': '{roe} > 0', 'column_id': 'roe'},
-                        'color': '#16c784',
-                        'fontWeight': 'bold'
-                    },
-                    {
-                        'if': {'filter_query': '{roe} < 0', 'column_id': 'roe'},
-                        'color': '#ea3943',
-                        'fontWeight': 'bold'
-                    }
-                ],
-                # Убрано ограничение высоты → все позиции видны
-                style_table={
-                    'overflowX': 'auto',
-                    'overflowY': 'auto',
-                    'maxHeight': None,
-                    'height': 'auto'
-                },
-                page_action='none'
-            )
-        ], style=styles['section'])
-    ], style=styles['container'])
-])
+        # Заголовок с количеством позиций
+        dbc.Row([
+            dbc.Col([
+                html.H5([
+                    html.Span("🟢", style={'marginRight': '6px'}),
+                    "Open Positions: ",
+                    html.Strong(id='positions-count')
+                ], style={'color': '#f5f5dc', 'textAlign': 'center'})
+            ], width=12, className="my-3")
+        ]),
+
+        # Список позиций (в виде карточек)
+        dbc.Row([
+            dbc.Col([
+                html.Div(id='positions-container', style={'marginTop': '10px'})
+            ], width=12)
+        ], className="mb-3")
+
+    ], fluid=True, style={'padding': '10px'}),
+
+    # Фон
+], style={'backgroundColor': '#121212', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
+
+
+# =============
+# Функция получения данных фьючерсов
+# =============
+def get_futures_data():
+    try:
+        logger.info("Fetching futures data from Binance API...")
+
+        # Баланс
+        futures_balances = binance_api.get_futures_balance()
+        futures_total = sum(
+            float(b['balance']) for b in futures_balances
+            if isinstance(b, dict) and 'balance' in b
+        ) if futures_balances else 0.0
+
+        # Позиции
+        raw_positions = binance_api.get_futures_positions()
+        positions = raw_positions.get('positions', []) if isinstance(raw_positions, dict) else raw_positions or []
+
+        # Преобразуем в DataFrame
+        df_positions = pd.DataFrame(positions)
+        if not df_positions.empty:
+            df_positions['size_usdt'] = df_positions['usdtValue'].round(2)
+            df_positions['leverage_x'] = df_positions['leverage'].astype(str) + 'x'
+            df_positions['contracts_abs'] = df_positions['positionAmt'].abs()
+            df_positions['entryPrice'] = df_positions['entryPrice'].round(6)
+            df_positions['markPrice'] = df_positions['markPrice'].round(6)
+            df_positions['unRealizedProfit'] = df_positions['unRealizedProfit'].round(2)
+            df_positions['roe'] = df_positions['roe'].round(2)
+
+            # Оставляем только нужные колонки
+            df_positions = df_positions[[
+                'symbol', 'positionSide', 'size_usdt', 'leverage_x', 'contracts_abs',
+                'entryPrice', 'markPrice', 'unRealizedProfit', 'roe'
+            ]]
+
+            positions_data = df_positions.to_dict('records')
+        else:
+            positions_data = []
+
+        # Сохраняем баланс
+        balance_storage.save_balance(0, futures_total)
+
+        return {
+            'futures_total': round(futures_total, 2),
+            'positions': positions_data,
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    except Exception as e:
+        logger.error(f"Error in get_futures_data: {e}")
+        logger.error(traceback.format_exc())
+        return {'error': str(e)}
+
 
 # =============
 # Callback: Обновление графика
@@ -249,166 +220,52 @@ def update_graph(btn30, btn90, btn_all, n_intervals):
 
     try:
         df = balance_storage.get_balance_history(period_days or 9999)
-        logger.info(f"Balance history before processing: {df}")
-
         if df.empty:
             fig = go.Figure()
-            fig.update_layout(
-                title="Нет данных",
-                template="plotly_dark",
-                font=dict(color="#eaecef")
-            )
+            fig.update_layout(title="No data", template="plotly_dark", height=300)
             return fig
 
-        # Преобразуем 'date' в datetime
         df['date'] = pd.to_datetime(df['date'])
-
-        # Фильтруем по дате (начиная с 01.08.2025)
         start_date = datetime(2025, 8, 1)
         df = df[df['date'] >= start_date]
-
-        # Убедимся, что отсортировано по времени
         df = df.sort_values('date')
 
-        # СОЗДАЁМ date_only ДО ФИЛЬТРАЦИИ
         df['date_only'] = df['date'].dt.date
-
-        # Убираем нулевые балансы
-        df_filtered = df[df['futures_balance'] > 0]
-
-        if df_filtered.empty:
-            # Если все значения нулевые — используем оригинальный df
-            df_filtered = df.copy()
-
-        # Группируем по дате
+        df_filtered = df[df['futures_balance'] > 0] if not df[df['futures_balance'] > 0].empty else df
         df_daily = df_filtered.groupby('date_only').agg(
             min_balance=('futures_balance', 'min'),
             max_balance=('futures_balance', 'max'),
             last_balance=('futures_balance', 'last')
         ).reset_index()
-
-        # Восстанавливаем полноценную дату
         df_daily['date'] = pd.to_datetime(df_daily['date_only'])
-
-        # Сортируем по дате
         df_daily = df_daily.sort_values('date')
 
-        if df_daily.empty:
-            df_daily = pd.DataFrame({
-                'date_only': [datetime.now().date()],
-                'min_balance': [0],
-                'max_balance': [0],
-                'last_balance': [0],
-                'date': [datetime.now()]
-            })
-
-        # Строим график
         fig = go.Figure()
-
-        # Минимум
-        fig.add_trace(go.Scatter(
-            x=df_daily['date'],
-            y=df_daily['min_balance'],
-            mode='lines',
-            name='Min Balance',
-            line=dict(color='#ea3943', width=1, dash='dot'),
-            hovertemplate='Min: %{y:.2f} USDT<extra></extra>'
-        ))
-
-        # Максимум
-        fig.add_trace(go.Scatter(
-            x=df_daily['date'],
-            y=df_daily['max_balance'],
-            mode='lines',
-            name='Max Balance',
-            line=dict(color='#16c784', width=1, dash='dot'),
-            hovertemplate='Max: %{y:.2f} USDT<extra></extra>'
-        ))
-
-        # Закрывающий баланс
-        fig.add_trace(go.Scatter(
-            x=df_daily['date'],
-            y=df_daily['last_balance'],
-            mode='lines+markers',
-            name='Close Balance',
-            line=dict(color='#f6465d', width=3),
-            marker=dict(size=6),
-            hovertemplate='%{y:.2f} USDT<extra></extra>'
-        ))
+        fig.add_trace(go.Scatter(x=df_daily['date'], y=df_daily['min_balance'], mode='lines', name='Min',
+                                 line=dict(dash='dot', color='#ea3943'), showlegend=False))
+        fig.add_trace(go.Scatter(x=df_daily['date'], y=df_daily['max_balance'], mode='lines', name='Max',
+                                 line=dict(dash='dot', color='#16c784'), showlegend=False))
+        fig.add_trace(go.Scatter(x=df_daily['date'], y=df_daily['last_balance'], mode='lines+markers', name='Close',
+                                 line=dict(color='#f6465d'), marker=dict(size=4)))
 
         fig.update_layout(
-            title=f"Total Futures Balance - {f'{period_days} days' if period_days else 'All time'}",
-            xaxis_title='Дата',
-            yaxis_title='Баланс (USDT)',
-            template='plotly_dark',
-            hovermode='x unified',
-            plot_bgcolor='#1e2026',
-            paper_bgcolor='#1e2026',
-            font=dict(color='#eaecef'),
-            xaxis=dict(tickformat='%d.%m', tickmode='auto', nticks=10),
-            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5)
-        )
-
-        return fig
-
-    except Exception as e:
-        logger.error(f"Error updating graph: {e}")
-        fig = go.Figure()
-        fig.update_layout(
-            title="Ошибка загрузки данных",
+            title=f"Balance — {period_days}d" if period_days else "All Time",
+            xaxis_title="Date",
+            yaxis_title="USDT",
             template="plotly_dark",
-            font=dict(color="#eaecef")
+            height=300,
+            margin=dict(l=40, r=40, t=50, b=40),
+            hovermode='x unified',
+            font=dict(size=10)
         )
         return fig
-# =============
-# API: Получение данных фьючерсов
-# =============
-@server.route('/get_futures_data')
-def get_futures_data():
-    try:
-        # Получение балансов
-        futures_balances = binance_api.get_futures_balance()
-        futures_total = sum(
-            float(b['balance']) for b in futures_balances
-            if isinstance(b, dict) and 'balance' in b
-        ) if futures_balances else 0.0
 
-        # Получение позиций
-        raw_positions = binance_api.get_futures_positions()
-        positions = raw_positions.get('positions', []) if isinstance(raw_positions, dict) else raw_positions or []
-
-        # Преобразуем в DataFrame
-        df_positions = pd.DataFrame(positions)
-        if not df_positions.empty:
-            df_positions['size_usdt'] = df_positions['usdtValue'].round(2)
-            df_positions['leverage_x'] = df_positions['leverage'].astype(str) + 'x'
-            df_positions['contracts_abs'] = df_positions['positionAmt'].abs()
-            df_positions['entryPrice'] = df_positions['entryPrice'].round(6)
-            df_positions['markPrice'] = df_positions['markPrice'].round(6)
-            df_positions['unRealizedProfit'] = df_positions['unRealizedProfit'].round(2)
-            df_positions['roe'] = df_positions['roe'].round(2)
-
-            df_positions = df_positions[[
-                'symbol', 'positionSide', 'size_usdt', 'leverage_x', 'contracts_abs',
-                'entryPrice', 'markPrice', 'unRealizedProfit', 'roe'
-            ]]
-        else:
-            df_positions = pd.DataFrame(columns=[
-                'symbol', 'positionSide', 'size_usdt', 'leverage_x', 'contracts_abs',
-                'entryPrice', 'markPrice', 'unRealizedProfit', 'roe'
-            ])
-
-        # Сохраняем баланс
-        balance_storage.save_balance(0, futures_total)
-
-        return jsonify({
-            'futures_total': round(futures_total, 2),
-            'positions': df_positions.to_dict('records'),
-            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
     except Exception as e:
-        logger.error(f"Error getting futures  {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Graph update error: {e}")
+        fig = go.Figure()
+        fig.update_layout(title="Error", template="plotly_dark", height=300)
+        return fig
+
 
 # =============
 # Callback: Обновление всех данных
@@ -419,65 +276,91 @@ def get_futures_data():
      Output('total-pnl', 'children'),
      Output('total-size', 'children'),
      Output('total-size-percent', 'children'),
-     Output('positions-table', 'data'),
+     Output('positions-container', 'children'),
      Output('positions-count', 'children')],
     [Input('interval-component', 'n_intervals')]
 )
-def update_positions_table(n_intervals):
+def update_data(n_intervals):
     try:
-        resp = requests.get('http://localhost:5000/get_futures_data')
-        data = resp.json()
-
+        data = get_futures_data()
         if 'error' in data:
-            return "–", "", "Ошибка загрузки данных", "–", "", [], "–"
+            logger.error(f"Data fetch error: {data['error']}")
+            return "–", "", "Error", "–", "", html.P("Failed to load data", style={'textAlign': 'center'}), "–"
 
         futures_total = data['futures_total']
         positions = data['positions']
         timestamp = data['timestamp']
 
-        # Расчёт общего PnL
+        # PnL
         total_pnl = sum(float(p['unRealizedProfit']) for p in positions) if positions else 0.0
-        pnl_percentage = (total_pnl /futures_total * 100) if futures_total > 0 else 0
+        pnl_percentage = (total_pnl / futures_total * 100) if futures_total > 0 else 0
+        pnl_color = '#16c784' if total_pnl >= 0 else '#ea3943'
 
         # Total Size
         total_size = sum(float(p['size_usdt']) for p in positions) if positions else 0.0
-        size_percent = (total_size /(20 * futures_total) * 100) if futures_total > 0 else 0
-
-        # Цвет Total Size
+        size_percent = (total_size / (20 * futures_total) * 100) if futures_total > 0 else 0
         size_color = '#ea3943' if total_size > (10 * futures_total) else '#16c784'
 
-        # PNL текст
-        pnl_text = html.Span(
-            f"{total_pnl:+.2f} USDT ({pnl_percentage:+.2f}%)",
-            style={'color': '#16c784' if total_pnl >= 0 else '#ea3943', 'fontWeight': 'bold'}
-        )
+        # Карточки позиций
+        position_cards = [
+            dbc.Card([
+                dbc.Row([
+                    dbc.Col([
+                        html.Div(p['symbol'], style={'fontWeight': 'bold', 'fontSize': '14px'}),
+                        html.Small(p['positionSide'], className="text-muted", style={'fontSize': '12px'})
+                    ], width=7),
+                    dbc.Col([
+                        html.Div(f"{p['size_usdt']} USDT", style={'fontSize': '14px', 'fontWeight': 'bold'}),
+                        html.Div(f"{p['roe']}% ROE", style={
+                            'color': '#16c784' if float(p['roe']) >= 0 else '#ea3943',
+                            'fontSize': '12px'
+                        })
+                    ], width=5, className="text-end")
+                ], className="g-1 align-items-center"),
+                dbc.Row([
+                    dbc.Col([
+                        html.Small(f"Entry: {p['entryPrice']}", className="text-muted"),
+                        html.Br(),
+                        html.Small(f"Mark: {p['markPrice']}", className="text-muted"),
+                    ], width=7),
+                    dbc.Col([
+                        html.Div(f"PNL: {p['unRealizedProfit']}", style={
+                            'color': '#16c784' if float(p['unRealizedProfit']) >= 0 else '#ea3943',
+                            'fontSize': '13px',
+                            'fontWeight': 'bold'
+                        })
+                    ], width=5, className="text-end")
+                ], className="g-1 mt-1")
+            ], style={'marginBottom': '8px', 'backgroundColor': '#1e2329'}, className="p-2")
+            for p in positions
+        ] if positions else [
+            html.P("No open positions", className="text-muted", style={'textAlign': 'center', 'marginTop': '10px'})]
 
         return (
             f"{futures_total:.2f} USDT",
             f"Last update: {timestamp}",
-            html.P([
-                "Unrealized PnL: ", pnl_text
-            ]),
-            html.Span(
-                f"{total_size:.2f} USDT",
-                style={'color': size_color, 'fontWeight': 'bold'}
-            ),
-            html.Span(
-                f"Used: {size_percent:.1f}% of the balance",
-                style={'color': size_color}
-            ),
-            positions,
+            html.Span(f"{total_pnl:+.2f} USDT ({pnl_percentage:+.2f}%)", style={'color': pnl_color}),
+            html.Span(f"{total_size:.2f} USDT", style={'color': size_color}),
+            html.Small(f"Used: {size_percent:.1f}% of balance", style={'color': size_color}),
+            position_cards,
             f"{len(positions)}"
         )
+
     except Exception as e:
-        logger.error(f"Error updating positions table: {e}")
-        return "–", "", "Ошибка", "–", "", [], "–"
+        logger.error(f"Update error: {e}")
+        logger.error(traceback.format_exc())
+        return "–", "", "Error", "–", "", html.P("Error loading positions", style={'textAlign': 'center'}), "–"
+
 
 # =============
-# Запуск приложения
+# Запуск сервера
 # =============
 if __name__ == '__main__':
     try:
-        server.run(host='0.0.0.0', port=5000, debug=True)
+        logger.info("🚀 Starting Binance Futures Dashboard...")
+        server.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8066)), debug=False)
+    except Exception as e:
+        logger.error(f"❌ Failed to start server: {e}")
+        logger.error(traceback.format_exc())
     finally:
         balance_storage.close()
