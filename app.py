@@ -1,7 +1,7 @@
 import os
 import logging
 import traceback
-from flask import Flask, jsonify, request
+from flask import Flask
 from dash import Dash, dcc, html, callback_context, Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
@@ -34,7 +34,8 @@ app = Dash(
     server=server,
     url_base_pathname='/',
     external_stylesheets=[dbc.themes.CYBORG],
-    suppress_callback_exceptions=True
+    suppress_callback_exceptions=True,
+    title="CatClan Monitor"  # Отображается в заголовке браузера
 )
 
 # =============
@@ -56,17 +57,20 @@ style_value = {
 # Макет приложения
 # =============
 app.layout = html.Div([
+    # Метатеги
     dcc.Location(id='url'),
     html.Meta(name='viewport', content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'),
+    html.Link(rel='icon', href='/assets/favicon.svg'),  # Иконка (опционально)
 
     # Хранилище для сортировки
     dcc.Store(id='sort-store', data={'field': 'size_usdt', 'order': 'desc'}),
 
+    # Основной контейнер
     dbc.Container([
         # Заголовок
         dbc.Row([
             dbc.Col(
-                html.H1("📊 Binance Futures", className="text-center my-3", style={
+                html.H1("🐱 CatClan Monitor", className="text-center my-3", style={
                     'color': '#f5f5dc',
                     'fontSize': '24px',
                     'fontWeight': 'bold'
@@ -75,7 +79,7 @@ app.layout = html.Div([
             )
         ]),
 
-        # График
+        # График баланса
         dbc.Row([
             dbc.Col([
                 dcc.Graph(
@@ -83,7 +87,7 @@ app.layout = html.Div([
                     style={'height': '300px'},
                     config={'displayModeBar': False}
                 ),
-                # Кнопки периодов (центрированы)
+                # Кнопки периодов
                 html.Div([
                     html.Div(
                         id='period-buttons-container',
@@ -111,7 +115,7 @@ app.layout = html.Div([
             ])
         ], className="mb-3"),
 
-        # Интервал обновления
+        # Интервал автообновления
         dcc.Interval(id='interval-component', interval=5 * 60 * 1000, n_intervals=0),
 
         # Статистика
@@ -150,7 +154,7 @@ app.layout = html.Div([
         dbc.Row([
             dbc.Col([
                 html.H5([
-                    html.Span("🟢", style={'marginRight': '6px'}),
+                    html.Span("🟢", className="float-animation", style={'marginRight': '6px'}),  # ✅ Анимация через CSS
                     "Open Positions: ",
                     html.Strong(id='positions-count'),
                     html.Span(" ", style={'width': '8px', 'display': 'inline-block'}),
@@ -171,13 +175,13 @@ app.layout = html.Div([
             ], width=12)
         ], className="mb-3")
 
-    ], fluid=True, style={'padding': '10px'}),
+    ], fluid=False, style={'padding': '10px', 'minHeight': '100vh'})
 
 ], style={'backgroundColor': '#121212', 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'})
 
 
 # =============
-# Получение данных
+# Получение данных фьючерсов
 # =============
 def get_futures_data():
     try:
@@ -224,7 +228,7 @@ def get_futures_data():
 
 
 # =============
-# Callback: График + активные кнопки
+# Callback: Обновление графика и кнопок
 # =============
 @app.callback(
     [Output('btn-7d', 'className'),
@@ -276,13 +280,13 @@ def update_graph_and_buttons(btn_7d, btn_14d, btn_1m, btn_3m, btn_6m, btn_12m, b
     try:
         df = balance_storage.get_balance_history(9999)
         if df.empty:
-            fig = go.Figure()
-            fig.update_layout(title="No data", template="plotly_dark", height=300)
+            fig = go.Figure().update_layout(title="No data", template="plotly_dark", height=300)
             return list(btn_classes.values()) + [fig]
 
         df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values('date')
 
+        # Фильтр: с 01.08.2025
         start_date = datetime(2025, 8, 1)
         df = df[df['date'] >= start_date]
 
@@ -291,8 +295,7 @@ def update_graph_and_buttons(btn_7d, btn_14d, btn_1m, btn_3m, btn_6m, btn_12m, b
             df = df[df['date'] >= cutoff_date]
 
         if df.empty:
-            fig = go.Figure()
-            fig.update_layout(title="No data", template="plotly_dark", height=300)
+            fig = go.Figure().update_layout(title="No data", template="plotly_dark", height=300)
             return list(btn_classes.values()) + [fig]
 
         df['date_only'] = df['date'].dt.date
@@ -335,15 +338,7 @@ def update_graph_and_buttons(btn_7d, btn_14d, btn_1m, btn_3m, btn_6m, btn_12m, b
             showlegend=False
         ))
 
-        period_labels = {
-            7: "7D",
-            14: "14D",
-            30: "1M",
-            90: "3M",
-            180: "6M",
-            365: "12M",
-            None: "All"
-        }
+        period_labels = {7: "7D", 14: "14D", 30: "1M", 90: "3M", 180: "6M", 365: "12M", None: "All"}
         period_label = period_labels.get(period_days, "Custom")
 
         fig.update_layout(
@@ -366,13 +361,12 @@ def update_graph_and_buttons(btn_7d, btn_14d, btn_1m, btn_3m, btn_6m, btn_12m, b
 
     except Exception as e:
         logger.error(f"Graph update error: {e}")
-        fig = go.Figure()
-        fig.update_layout(title="Error", template="plotly_dark", height=300)
+        fig = go.Figure().update_layout(title="Error", template="plotly_dark", height=300)
         return list(btn_classes.values()) + [fig]
 
 
 # =============
-# Callback: Сортировка по клику
+# Callback: Переключение сортировки
 # =============
 @app.callback(
     Output('sort-store', 'data'),
@@ -430,6 +424,7 @@ def update_data_and_sort(n_intervals, sort_data):
         reverse = sort_data['order'] == 'desc'
         sorted_positions = sorted(positions, key=lambda x: float(x[field]), reverse=reverse)
 
+        # Карточки позиций
         position_cards = [
             dbc.Card([
                 dbc.Row([
@@ -494,7 +489,7 @@ def update_data_and_sort(n_intervals, sort_data):
 # =============
 if __name__ == '__main__':
     try:
-        logger.info("🚀 Starting Binance Futures Dashboard...")
+        logger.info("🚀 Starting CatClan Monitor...")
         port = int(os.environ.get("PORT", 8066))
         server.run(host='0.0.0.0', port=port, debug=False)
     except Exception as e:

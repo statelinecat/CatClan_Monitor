@@ -1,4 +1,7 @@
-/* Анимация плавающего эмодзи */
+/* =============
+   Анимации
+   ============= */
+
 @keyframes float {
     0%, 100% {
         transform: translateY(0);
@@ -8,14 +11,15 @@
     }
 }
 
-/* Стиль таблицы */
-.dash-table-container .dash-spreadsheet-inner {
-    border: 1px solid #2c3137;
-    border-radius: 8px;
-    overflow: hidden;
+.float-animation {
+    animation: float 2s ease-in-out infinite;
+    display: inline-block;
 }
 
-/* assets/styles.css */
+/* =============
+   Кнопки периодов
+   ============= */
+
 .period-btn {
     background-color: #2c3137;
     border: none;
@@ -24,6 +28,7 @@
     font-size: 13px;
     border-radius: 6px;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
 
 .period-btn:hover {
@@ -35,4 +40,34 @@
     color: #000 !important;
     font-weight: bold;
     box-shadow: 0 0 0 2px rgba(245, 245, 220, 0.3);
+}
+
+/* =============
+   Таблица (опционально)
+   Удалите, если не используете dash_table.DataTable
+   ============= */
+
+.dash-table-container {
+    border: 1px solid #2c3137;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-top: 10px;
+}
+
+.dash-table-container .dash-spreadsheet-container {
+    border: none !important;
+}
+
+.dash-table-container .dash-header {
+    background-color: #1e2329 !important;
+}
+
+.dash-table-container .dash-cell {
+    background-color: #161a1f !important;
+    color: #eaecef !important;
+    padding: 8px 10px;
+}
+
+.dash-table-container .dash-cell:hover {
+    background-color: #2c3137 !important;
 }
